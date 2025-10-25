@@ -34,6 +34,9 @@ Qwen CLI prompt for Promptree application
 			- rm <id>[,<id>,...]
 				- Removes the conversations and its sub conversation trees recursively starting from the given conversation id. System will get confirmation before removing the conversations.
 			- edit <id> -subject "<new subject>" -parent <None|id>
+- edit <id> -link <id>[,<id>,...] (link to multiple conversations)
+- edit <id> -link None (remove all links)
+- edit <id> -unlink <id>[,<id>,...] (unlink from specific conversations)
 				- Updates the subject for the conversation with <id> with the <new subject>
 				- Updates the parent for the conversation to another conversation or set to None to make this conversation as root conversation
 			- list

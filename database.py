@@ -43,6 +43,21 @@ class DatabaseManager:
         # Create index on pid for faster tree traversal
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_pid ON conversations(pid)')
         
+        # Create conversation_links table to store relationships between conversations
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS conversation_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id INTEGER NOT NULL,
+                linked_conversation_id INTEGER NOT NULL,
+                UNIQUE(conversation_id, linked_conversation_id),
+                FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE CASCADE,
+                FOREIGN KEY (linked_conversation_id) REFERENCES conversations (id) ON DELETE CASCADE
+            )
+        ''')
+        
+        # Create index for faster lookups of linked conversations
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_conversation_links ON conversation_links(conversation_id)')
+        
         conn.commit()
         conn.close()
     
@@ -335,4 +350,129 @@ class DatabaseManager:
         results = cursor.fetchall()
         conn.close()
 
+        return results
+    
+    def add_conversation_link(self, conversation_id: int, linked_conversation_id: int):
+        """Add a link between two conversations.
+        
+        Args:
+            conversation_id: ID of the conversation to link from
+            linked_conversation_id: ID of the conversation to link to
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            # Prevent linking a conversation to itself
+            if conversation_id == linked_conversation_id:
+                raise ValueError("Cannot link a conversation to itself")
+            
+            # Insert the link
+            cursor.execute('''
+                INSERT INTO conversation_links (conversation_id, linked_conversation_id)
+                VALUES (?, ?)
+            ''', (conversation_id, linked_conversation_id))
+            
+            conn.commit()
+        except sqlite3.IntegrityError:
+            # Link already exists
+            raise ValueError(f"Link already exists between conversation {conversation_id} and {linked_conversation_id}")
+        finally:
+            conn.close()
+    
+    def remove_conversation_link(self, conversation_id: int, linked_conversation_id: int):
+        """Remove a link between two conversations.
+        
+        Args:
+            conversation_id: ID of the conversation that was linked from
+            linked_conversation_id: ID of the conversation that was linked to
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            DELETE FROM conversation_links
+            WHERE conversation_id = ? AND linked_conversation_id = ?
+        ''', (conversation_id, linked_conversation_id))
+        
+        conn.commit()
+        conn.close()
+    
+    def remove_all_conversation_links(self, conversation_id: int):
+        """Remove all links from a specific conversation.
+        
+        Args:
+            conversation_id: ID of the conversation to remove all links from
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Remove links where this conversation is the source
+        cursor.execute('''
+            DELETE FROM conversation_links
+            WHERE conversation_id = ?
+        ''', (conversation_id,))
+        
+        # Also remove links where this conversation is the target
+        cursor.execute('''
+            DELETE FROM conversation_links
+            WHERE linked_conversation_id = ?
+        ''', (conversation_id,))
+        
+        conn.commit()
+        conn.close()
+    
+    def get_linked_conversations(self, conversation_id: int) -> List[Tuple]:
+        """Get all conversations linked to a given conversation.
+        
+        Args:
+            conversation_id: ID of the conversation to get links for
+            
+        Returns:
+            List of tuples representing linked conversations (id, subject, model_name, user_prompt, llm_response, 
+            pid, user_prompt_timestamp, llm_response_timestamp)
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Get conversations linked to this one (both directions)
+        cursor.execute('''
+            SELECT c.id, c.subject, c.model_name, c.user_prompt, c.llm_response, 
+                   c.pid, c.user_prompt_timestamp, c.llm_response_timestamp
+            FROM conversations c
+            INNER JOIN conversation_links cl ON (c.id = cl.linked_conversation_id OR c.id = cl.conversation_id)
+            WHERE (cl.conversation_id = ? OR cl.linked_conversation_id = ?)
+              AND c.id != ?
+        ''', (conversation_id, conversation_id, conversation_id))
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        return results
+    
+    def get_conversation_link_ids(self, conversation_id: int) -> List[int]:
+        """Get IDs of all conversations linked to a given conversation.
+        
+        Args:
+            conversation_id: ID of the conversation to get link IDs for
+            
+        Returns:
+            List of conversation IDs that are linked to the given conversation
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Get IDs of conversations linked to this one (both directions)
+        cursor.execute('''
+            SELECT CASE 
+                WHEN cl.conversation_id = ? THEN cl.linked_conversation_id
+                ELSE cl.conversation_id
+            END as linked_id
+            FROM conversation_links cl
+            WHERE cl.conversation_id = ? OR cl.linked_conversation_id = ?
+        ''', (conversation_id, conversation_id, conversation_id))
+        
+        results = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        
         return results

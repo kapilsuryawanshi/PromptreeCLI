@@ -75,11 +75,20 @@ class CLIHandler(cmd.Cmd):
             print("Deletion canceled.")
     
     def do_edit(self, arg):
-        """Edit conversation subject and/or parent: 
+        """Edit conversation subject, parent, and/or links: 
         edit <id> -subject \"<new subject>\"
         edit <id> -parent <id|None>
+        edit <id> -link <id>[,<id>,...]
+        edit <id> -unlink <id>[,<id>,...]
         edit <id> -parent <id|None> -subject \"<new subject>\"
-        edit <id> -subject \"<new subject>\" -parent <id|None>"""
+        edit <id> -subject \"<new subject>\" -parent <id|None>
+        edit <id> -subject \"<new subject>\" -link <id>[,<id>,...]
+        edit <id> -parent <id|None> -link <id>[,<id>,...]
+        edit <id> -subject \"<new subject>\" -parent <id|None> -link <id>[,<id>,...]
+        edit <id> -link None (to remove all links)
+        edit <id> -subject \"<new subject>\" -unlink <id>[,<id>,...]
+        edit <id> -parent <id|None> -unlink <id>[,<id>,...]
+        edit <id> -subject \"<new subject>\" -parent <id|None> -unlink <id>[,<id>,...]"""
         if not arg:
             print(utils.format_error("Please provide a conversation ID and parameter(s) to edit."))
             return
@@ -91,11 +100,11 @@ class CLIHandler(cmd.Cmd):
             tokens = shlex.split(arg)
         except ValueError as e:
             print(utils.format_error(f"Invalid syntax. Error parsing arguments: {e}"))
-            print(utils.format_error("Use: edit <id> -subject \"<new subject>\" OR edit <id> -parent <id|None> OR both"))
+            print(utils.format_error("Use: edit <id> [-subject \"<new subject>\"] [-parent <id|None>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]"))
             return
         
-        if len(tokens) < 3:
-            print(utils.format_error("Invalid syntax. Use: edit <id> -subject \"<new subject>\" OR edit <id> -parent <id|None> OR both"))
+        if len(tokens) < 2:
+            print(utils.format_error("Invalid syntax. Use: edit <id> [-subject \"<new subject>\"] [-parent <id|None>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]"))
             return
         
         # First token should be the conversation ID
@@ -115,6 +124,8 @@ class CLIHandler(cmd.Cmd):
         NO_VALUE_PROVIDED = object()  # Sentinel object to differentiate
         new_subject = NO_VALUE_PROVIDED
         new_parent_id = NO_VALUE_PROVIDED
+        new_links = NO_VALUE_PROVIDED
+        unlink_ids = NO_VALUE_PROVIDED
         i = 1
         while i < len(tokens):
             if tokens[i] == '-subject' and i + 1 < len(tokens):
@@ -141,14 +152,49 @@ class CLIHandler(cmd.Cmd):
                         print(utils.format_error(f"Invalid parent ID: {parent_arg}"))
                         return
                 i += 2
+            elif tokens[i] == '-link' and i + 1 < len(tokens):
+                links_arg = tokens[i + 1]
+                if links_arg.lower() in ['none', 'null']:
+                    new_links = []  # Empty list means remove all links
+                else:
+                    try:
+                        # Parse comma-separated IDs
+                        link_ids = [int(id_str.strip()) for id_str in links_arg.split(',')]
+                        # Validate that each linked conversation exists
+                        for link_id in link_ids:
+                            linked_conversation = self.db_manager.get_conversation(link_id)
+                            if not linked_conversation:
+                                print(utils.format_error(f"Linked conversation with ID {link_id} not found."))
+                                return
+                        
+                        new_links = link_ids
+                    except ValueError:
+                        print(utils.format_error(f"Invalid link IDs: {links_arg}. Use comma-separated numeric IDs."))
+                        return
+                i += 2
+            elif tokens[i] == '-unlink' and i + 1 < len(tokens):
+                unlink_arg = tokens[i + 1]
+                try:
+                    # Parse comma-separated IDs to unlink
+                    unlink_ids = [int(id_str.strip()) for id_str in unlink_arg.split(',')]
+                    # Validate that each conversation to unlink exists
+                    for unlink_id in unlink_ids:
+                        unlink_conversation = self.db_manager.get_conversation(unlink_id)
+                        if not unlink_conversation:
+                            print(utils.format_error(f"Conversation to unlink with ID {unlink_id} not found."))
+                            return
+                except ValueError:
+                    print(utils.format_error(f"Invalid unlink IDs: {unlink_arg}. Use comma-separated numeric IDs."))
+                    return
+                i += 2
             else:
                 print(utils.format_error(f"Invalid syntax near: {tokens[i]}"))
-                print(utils.format_error("Use: edit <id> -subject \"<new subject>\" OR edit <id> -parent <id|None> OR both"))
+                print(utils.format_error("Use: edit <id> [-subject \"<new subject>\"] [-parent <id|None>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]"))
                 return
         
         # Validate that at least one field is being updated
-        if new_subject is NO_VALUE_PROVIDED and new_parent_id is NO_VALUE_PROVIDED:
-            print(utils.format_error("Must specify at least one field to edit: -subject or -parent"))
+        if new_subject is NO_VALUE_PROVIDED and new_parent_id is NO_VALUE_PROVIDED and new_links is NO_VALUE_PROVIDED and unlink_ids is NO_VALUE_PROVIDED:
+            print(utils.format_error("Must specify at least one field to edit: -subject, -parent, -link, or -unlink"))
             return
         
         # Update the conversation
@@ -167,6 +213,40 @@ class CLIHandler(cmd.Cmd):
                     changes_made.append(f"Updated parent to None (now root conversation)")
                 else:
                     changes_made.append(f"Updated parent to {new_parent_id}")
+            
+            # Update links if provided
+            if new_links is not NO_VALUE_PROVIDED:
+                # First, remove all existing links for this conversation
+                self.db_manager.remove_all_conversation_links(conv_id)
+                
+                # Add new links
+                if new_links:  # If the list is not empty
+                    for link_id in new_links:
+                        # Prevent linking to itself
+                        if link_id == conv_id:
+                            print(utils.format_error(f"Cannot link conversation {conv_id} to itself."))
+                            continue
+                        self.db_manager.add_conversation_link(conv_id, link_id)
+                    
+                    changes_made.append(f"Updated links to: {', '.join(map(str, new_links))}")
+                else:
+                    changes_made.append("Removed all links")
+            
+            # Unlink specific conversations if provided
+            if unlink_ids is not NO_VALUE_PROVIDED:
+                for unlink_id in unlink_ids:
+                    # Prevent unlinking from itself
+                    if unlink_id == conv_id:
+                        print(utils.format_error(f"Cannot unlink conversation {conv_id} from itself."))
+                        continue
+                    # Try to remove the link in both directions
+                    try:
+                        self.db_manager.remove_conversation_link(conv_id, unlink_id)
+                        # Also try removing the reverse link in case it exists
+                        self.db_manager.remove_conversation_link(unlink_id, conv_id)
+                        changes_made.append(f"Unlinked from conversation {unlink_id}")
+                    except Exception as e:
+                        print(utils.format_error(f"Error unlinking from conversation {unlink_id}: {e}"))
         
             # Print results
             for change in changes_made:
@@ -273,6 +353,14 @@ class CLIHandler(cmd.Cmd):
             if tree['llm_response']:
                 print(f"  {prefix}  Response:")
                 print(f"  {prefix}  {utils.format_response(tree['llm_response'])}")
+            
+            # Get and display linked conversations
+            linked_conversations = self.db_manager.get_linked_conversations(tree['id'])
+            if linked_conversations:
+                print(f"  {prefix}  Linked conversations:")
+                for linked_conv in linked_conversations:
+                    linked_id, linked_subject, _, _, _, _, linked_timestamp, _ = linked_conv
+                    print(f"  {prefix}    • {utils.format_subject(linked_subject)} (id: {linked_id}, created on: {linked_timestamp})")
         
         # Prepare prefix for children - if we're showing full content, the children will only show subjects
         extension = "    " if is_last else "│   "
@@ -494,7 +582,7 @@ class CLIHandler(cmd.Cmd):
             print("Available commands:")
             print("  quit          - Quit the application")
             print("  rm <id>[,<id>,...] - Remove conversations and their subtrees")
-            print("  edit <id> [-subject \"<new subject>\"] [-parent <id|None>] - Modify conversation")
+            print("  edit <id> [-subject \"<new subject>\"] [-parent <id|None>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]] - Modify conversation")
             print("  list         - List top-level conversations")
             print("  open <id>    - Show conversation and its subtree")
             print("  close        - Close current conversation context, reset to root")
