@@ -1,6 +1,7 @@
 import cmd
 import sys
 import re
+import sqlite3
 from typing import Optional
 from database import DatabaseManager
 from conversation_tree import ConversationTree
@@ -76,6 +77,7 @@ class CLIHandler(cmd.Cmd):
     
     def do_edit(self, arg):
         """Edit conversation subject, parent, and/or links: 
+        edit <id> - Open conversation in external editor (plain text format) for comprehensive editing
         edit <id> -subject \"<new subject>\"
         edit <id> -parent <id|None>
         edit <id> -link <id>[,<id>,...]
@@ -89,6 +91,10 @@ class CLIHandler(cmd.Cmd):
         edit <id> -subject \"<new subject>\" -unlink <id>[,<id>,...]
         edit <id> -parent <id|None> -unlink <id>[,<id>,...]
         edit <id> -subject \"<new subject>\" -parent <id|None> -unlink <id>[,<id>,...]"""
+        import tempfile
+        import subprocess
+        import os
+        
         if not arg:
             print(utils.format_error("Please provide a conversation ID and parameter(s) to edit."))
             return
@@ -103,10 +109,6 @@ class CLIHandler(cmd.Cmd):
             print(utils.format_error("Use: edit <id> [-subject \"<new subject>\"] [-parent <id|None>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]"))
             return
         
-        if len(tokens) < 2:
-            print(utils.format_error("Invalid syntax. Use: edit <id> [-subject \"<new subject>\"] [-parent <id|None>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]"))
-            return
-        
         # First token should be the conversation ID
         try:
             conv_id = int(tokens[0])
@@ -118,6 +120,15 @@ class CLIHandler(cmd.Cmd):
         conversation = self.db_manager.get_conversation(conv_id)
         if not conversation:
             print(utils.format_error(f"Conversation with ID {conv_id} not found."))
+            return
+        
+        # If only conversation ID is provided without any options, open in external editor
+        if len(tokens) == 1:
+            self._edit_conversation_in_external_editor(conv_id, conversation)
+            return
+        
+        if len(tokens) < 2:
+            print(utils.format_error("Invalid syntax. Use: edit <id> [-subject \"<new subject>\"] [-parent <id|None>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]]"))
             return
         
         # Parse the options using sentinel values to distinguish "not provided" from "provided as None"
@@ -254,6 +265,145 @@ class CLIHandler(cmd.Cmd):
         
         except Exception as e:
             print(utils.format_error(f"Error updating conversation: {e}"))
+
+    def _edit_conversation_in_external_editor(self, conv_id: int, conversation: tuple):
+        """Open conversation in external editor for comprehensive editing.
+        
+        Args:
+            conv_id: ID of the conversation to edit
+            conversation: The conversation tuple to edit
+        """
+        import tempfile
+        import subprocess
+        import os
+        
+        # Convert conversation to plain text format
+        text_content = utils.conversation_to_text(conversation, self.db_manager)
+        
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as temp_file:
+            temp_file.write(text_content)
+            temp_file_path = temp_file.name
+        
+        try:
+            # Determine the appropriate editor based on the operating system
+            editor = os.environ.get('EDITOR', 'notepad' if os.name == 'nt' else 'nano')
+            
+            # Launch the editor to edit the temporary file
+            subprocess.run([editor, temp_file_path])
+            
+            # Read the modified content back from the temporary file
+            with open(temp_file_path, 'r', encoding='utf-8') as f:
+                modified_text_content = f.read()
+            
+            # Parse the modified text back to conversation data
+            updated_data = utils.parse_conversation_text(modified_text_content)
+            
+            # Update the conversation in the database
+            changes_made = []
+            
+            # Update subject if it changed
+            if updated_data['subject'] != conversation[1]:  # subject is at index 1
+                self.db_manager.update_subject(conv_id, updated_data['subject'])
+                changes_made.append(f"Updated subject to: {utils.format_subject(updated_data['subject'])}")
+            
+            # Update parent if it changed
+            if updated_data['pid'] != conversation[5]:  # pid is at index 5
+                if updated_data['pid'] is not None:
+                    # Validate the new parent ID exists
+                    parent_conversation = self.db_manager.get_conversation(updated_data['pid'])
+                    if not parent_conversation:
+                        print(utils.format_error(f"Parent conversation with ID {updated_data['pid']} not found."))
+                        return
+                    
+                    # Check for circular reference
+                    if self._would_create_circular_reference(conv_id, updated_data['pid']):
+                        print(utils.format_error(f"Cannot set parent to {updated_data['pid']}. This would create a circular reference."))
+                        return
+                
+                self.db_manager.update_conversation_parent(conv_id, updated_data['pid'])
+                if updated_data['pid'] is None:
+                    changes_made.append(f"Updated parent to None (now root conversation)")
+                else:
+                    changes_made.append(f"Updated parent to {updated_data['pid']}")
+            
+            # Update user prompt if it changed
+            if updated_data['user_prompt'] != conversation[3]:  # user_prompt is at index 3
+                # For now, we just update the user prompt directly
+                conn = sqlite3.connect(self.db_manager.db_path)
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    UPDATE conversations
+                    SET user_prompt = ?
+                    WHERE id = ?
+                ''', (updated_data['user_prompt'], conv_id))
+                
+                conn.commit()
+                conn.close()
+                changes_made.append(f"Updated user prompt")
+            
+            # Update LLM response if it changed
+            if updated_data['llm_response'] != conversation[4]:  # llm_response is at index 4
+                # For now, we just update the llm_response directly
+                conn = sqlite3.connect(self.db_manager.db_path)
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    UPDATE conversations
+                    SET llm_response = ?
+                    WHERE id = ?
+                ''', (updated_data['llm_response'], conv_id))
+                
+                conn.commit()
+                conn.close()
+                changes_made.append(f"Updated LLM response")
+            
+            # Update linked conversations if they changed
+            existing_linked_ids = set(self.db_manager.get_conversation_link_ids(conv_id))
+            new_linked_ids = set(updated_data['linked_ids'])
+            
+            if existing_linked_ids != new_linked_ids:
+                # Remove all existing links
+                self.db_manager.remove_all_conversation_links(conv_id)
+                
+                # Add new links
+                for link_id in new_linked_ids:
+                    # Check if the conversation to link to exists
+                    linked_conversation = self.db_manager.get_conversation(link_id)
+                    if not linked_conversation:
+                        print(utils.format_error(f"Cannot link to conversation {link_id} - it does not exist."))
+                        continue
+                    
+                    # Prevent linking to itself
+                    if link_id == conv_id:
+                        print(utils.format_error(f"Cannot link conversation {conv_id} to itself."))
+                        continue
+                    
+                    try:
+                        self.db_manager.add_conversation_link(conv_id, link_id)
+                    except ValueError as e:
+                        print(utils.format_error(f"Error linking to conversation {link_id}: {e}"))
+                
+                changes_made.append(f"Updated linked conversations to: {list(new_linked_ids)}")
+            
+            # Print results
+            if changes_made:
+                for change in changes_made:
+                    print(f"Updated conversation {conv_id} - {change}")
+            else:
+                print(f"No changes were made to conversation {conv_id}")
+        
+        except ValueError as e:
+            print(utils.format_error(f"Error parsing text format: {e}"))
+        except Exception as e:
+            print(utils.format_error(f"Error updating conversation: {e}"))
+        finally:
+            # Clean up the temporary file
+            try:
+                os.remove(temp_file_path)
+            except OSError:
+                pass  # Ignore errors in removing temporary file
     
     def _would_create_circular_reference(self, conv_id: int, new_parent_id: int) -> bool:
         """Check if setting new_parent_id as parent of conv_id would create a circular reference.
@@ -582,6 +732,7 @@ class CLIHandler(cmd.Cmd):
             print("Available commands:")
             print("  quit          - Quit the application")
             print("  rm <id>[,<id>,...] - Remove conversations and their subtrees")
+            print("  edit <id> - Open conversation in external editor (plain text format) for comprehensive editing")
             print("  edit <id> [-subject \"<new subject>\"] [-parent <id|None>] [-link <id>[,<id>,...]] [-unlink <id>[,<id>,...]] - Modify conversation")
             print("  list         - List top-level conversations")
             print("  open <id>    - Show conversation and its subtree")

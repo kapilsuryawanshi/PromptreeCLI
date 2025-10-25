@@ -37,6 +37,7 @@ Qwen CLI prompt for Promptree application
 - edit <id> -link <id>[,<id>,...] (link to multiple conversations)
 - edit <id> -link None (remove all links)
 - edit <id> -unlink <id>[,<id>,...] (unlink from specific conversations)
+- edit <id> (opens conversation in external editor in plain text format for comprehensive editing)
 				- Updates the subject for the conversation with <id> with the <new subject>
 				- Updates the parent for the conversation to another conversation or set to None to make this conversation as root conversation
 			- list

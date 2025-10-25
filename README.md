@@ -68,6 +68,7 @@ Update the subject of a conversation and/or parent relationship:
 - Link to other conversations: `edit <id> -link <id>[,<id>,...]` (link to multiple conversations using comma separation)
 - Remove all links: `edit <id> -link None`
 - Remove specific links: `edit <id> -unlink <id>[,<id>,...]` (unlink from multiple conversations using comma separation)
+- Edit in external editor: `edit <id>` (opens conversation in your default editor in plain text format for comprehensive editing)
 ```
 Promptree|llama2|Parent:None> edit 1 -subject "Updated subject"
 Promptree|llama2|Parent:None> edit 1 -parent 2
