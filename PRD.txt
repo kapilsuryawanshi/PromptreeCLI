@@ -31,6 +31,8 @@ Qwen CLI prompt for Promptree application
 		- The application will support following commands at this prompt.
 			- quit
 				- This will quit the application.
+			- exit
+				- This is an alias for quit command.
 			- rm <id>[,<id>,...]
 				- Removes the conversations and its sub conversation trees recursively starting from the given conversation id. System will get confirmation before removing the conversations.
 			- edit <id> -subject "<new subject>" -parent <None|id>
@@ -40,6 +42,7 @@ Qwen CLI prompt for Promptree application
 - edit <id> (opens conversation in external editor in plain text format for comprehensive editing)
 				- Updates the subject for the conversation with <id> with the <new subject>
 				- Updates the parent for the conversation to another conversation or set to None to make this conversation as root conversation
+				- The comprehensive editing feature opens a temporary text file with the conversation details in plain text format, allowing users to edit subject, parent ID, user prompt, LLM response, and linked conversations. The file format includes markers like USER_PROMPT_START/USER_PROMPT_END and LLM_RESPONSE_START/LLM_RESPONSE_END for editing the prompt and response content.
 			- list
 				- Lists the top level conversations from database in following format, if any.
 					-
@@ -92,13 +95,32 @@ Qwen CLI prompt for Promptree application
 						  ```text
 						  Saved conversation id: 127 — subject: "Why X?"
 						  ```
+			- ask
+				- Opens an external editor to input a longer prompt and parent ID from a file (when no arguments provided)
+				- When 'ask' is used without arguments, it opens a temporary text file with PARENT_ID and USER_PROMPT sections for users to input longer prompts and specify the parent conversation ID. The file format includes markers like USER_PROMPT_START/USER_PROMPT_END for editing the prompt content.
+			- add
+				- Opens an external editor to manually add a conversation with parent, links, prompt and response
+				- When 'add' is used, it opens a temporary text file that includes fields for PARENT_ID, LINKED_CONVERSATIONS_ID, USER_PROMPT, and LLM_RESPONSE. The file format includes markers like USER_PROMPT_START/USER_PROMPT_END and LLM_RESPONSE_START/LLM_RESPONSE_END for editing the prompt and response content. The LLM generates a subject line based on the prompt and response, then adds the conversation to the database with the specified parent and links.
 			- export <id> <file>
 				- exports the conversation tree starting at given id into markdown format into a file
 			- summarize <id>
 				- summarize the conversation at given id
+			- search <text>
+				- Search for text in conversations (supports wildcard characters * and case-insensitive matching)
+				- Lists subjects of all matching conversations
 			- help
 				- Provides detailed help for every supported command.
-		- The text displayed in the console will have the following colors.
+		- The application uses external editors for file-based editing in edit, ask, and add commands:
+			- The application first checks for the EDITOR environment variable
+			- If not set, it falls back to the VISUAL environment variable
+			- On Windows, if neither is set, it defaults to notepad
+			- On Unix-like systems, it defaults to nano
+			- Users can configure their preferred editor via environment variables:
+				- For VS Code: set EDITOR=code --wait
+				- For Sublime Text: set EDITOR=subl -w
+				- For default system application on Windows: set EDITOR=default
+				- For Notepad++: set EDITOR=notepad++ -multiInst -notabbar -nosession -noPlugin
+			- The text displayed in the console will have the following colors.
 			- Subject line will always be in yellow color
 			- User prompt will always be in cyan color
 			- LLM Response will always be in green color
