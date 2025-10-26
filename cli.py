@@ -576,6 +576,7 @@ class CLIHandler(cmd.Cmd):
                 print(f"  {prefix}  Prompt:")
                 print(f"  {prefix}  {utils.format_prompt(tree['user_prompt'])}")
             if tree['llm_response']:
+                print(f"  {prefix}  Model: {tree['model_name']}")
                 print(f"  {prefix}  Response:")
                 print(f"  {prefix}  {utils.format_response(tree['llm_response'])}")
             
