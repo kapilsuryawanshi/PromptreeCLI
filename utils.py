@@ -176,3 +176,87 @@ def parse_conversation_text(text_content: str) -> dict:
             updated_data['linked_ids'] = []  # Empty string means no linked conversations
     
     return updated_data
+
+
+def parse_ask_file_content(text_content: str):
+    """
+    Parse the content from the ask command text file.
+    """
+    import re
+    
+    # Initialize with default values
+    parsed_data = {
+        'parent_id': None,
+        'user_prompt': ''
+    }
+    
+    # Extract user prompt between markers
+    user_prompt_match = re.search(r'USER_PROMPT_START\s*\n(.*?)\n\s*USER_PROMPT_END', text_content, re.DOTALL)
+    if user_prompt_match:
+        parsed_data['user_prompt'] = user_prompt_match.group(1).strip()
+    
+    # Extract parent ID
+    parent_id_match = re.search(r'^PARENT_ID:\s*(.*)', text_content, re.MULTILINE)
+    if parent_id_match:
+        parent_id_str = parent_id_match.group(1).strip()
+        if parent_id_str.lower() in ('', 'none', 'null'):
+            parsed_data['parent_id'] = None
+        else:
+            try:
+                parsed_data['parent_id'] = int(parent_id_str)
+            except ValueError:
+                parsed_data['parent_id'] = None  # Invalid parent ID, set to None
+    
+    return parsed_data
+
+
+def parse_add_file_content(text_content: str):
+    """
+    Parse the content from the add command text file.
+    """
+    import re
+    
+    # Initialize with default values
+    parsed_data = {
+        'parent_id': None,
+        'user_prompt': '',
+        'llm_response': '',
+        'linked_ids': []
+    }
+    
+    # Extract user prompt between markers
+    user_prompt_match = re.search(r'USER_PROMPT_START\s*\n(.*?)\n\s*USER_PROMPT_END', text_content, re.DOTALL)
+    if user_prompt_match:
+        parsed_data['user_prompt'] = user_prompt_match.group(1).strip()
+    
+    # Extract LLM response between markers
+    llm_response_match = re.search(r'LLM_RESPONSE_START\s*\n(.*?)\n\s*LLM_RESPONSE_END', text_content, re.DOTALL)
+    if llm_response_match:
+        parsed_data['llm_response'] = llm_response_match.group(1).strip()
+    
+    # Extract parent ID
+    parent_id_match = re.search(r'^PARENT_ID:\s*(.*)', text_content, re.MULTILINE)
+    if parent_id_match:
+        parent_id_str = parent_id_match.group(1).strip()
+        if parent_id_str.lower() in ('', 'none', 'null'):
+            parsed_data['parent_id'] = None
+        else:
+            try:
+                parsed_data['parent_id'] = int(parent_id_str)
+            except ValueError:
+                parsed_data['parent_id'] = None  # Invalid parent ID, set to None
+    
+    # Extract linked conversations ID
+    linked_ids_match = re.search(r'^LINKED_CONVERSATIONS_ID:\s*(.*)', text_content, re.MULTILINE)
+    if linked_ids_match:
+        linked_ids_str = linked_ids_match.group(1).strip()
+        if linked_ids_str:
+            try:
+                # Parse comma-separated IDs
+                parsed_data['linked_ids'] = [int(id_str.strip()) for id_str in linked_ids_str.split(',') if id_str.strip()]
+            except ValueError:
+                parsed_data['linked_ids'] = []  # Invalid IDs, set to empty list
+        else:
+            parsed_data['linked_ids'] = []  # Empty string means no linked conversations
+    
+    return parsed_data

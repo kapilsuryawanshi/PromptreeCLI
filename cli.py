@@ -70,6 +70,12 @@ class CLIHandler(cmd.Cmd):
                 try:
                     self.db_manager.delete_conversation(conv_id)
                     print(f"Deleted conversation {conv_id} and its subtree.")
+                    
+                    # If the deleted conversation was the current parent context, reset it to None
+                    if self.current_parent_id == conv_id:
+                        self.current_parent_id = None
+                        print(f"Current parent context reset to None as conversation {conv_id} was deleted.")
+                        
                 except Exception as e:
                     print(utils.format_error(f"Error deleting conversation {conv_id}: {e}"))
         else:
@@ -266,23 +272,24 @@ class CLIHandler(cmd.Cmd):
         except Exception as e:
             print(utils.format_error(f"Error updating conversation: {e}"))
 
-    def _edit_conversation_in_external_editor(self, conv_id: int, conversation: tuple):
-        """Open conversation in external editor for comprehensive editing.
+    def _open_editor_with_content(self, initial_content: str, parse_function):
+        """
+        Open an external editor with the given content and return the modified content.
         
         Args:
-            conv_id: ID of the conversation to edit
-            conversation: The conversation tuple to edit
+            initial_content: The initial content to display in the editor
+            parse_function: Function to parse the modified content
+            
+        Returns:
+            Parsed data from the modified content
         """
         import tempfile
         import subprocess
         import os
         
-        # Convert conversation to plain text format
-        text_content = utils.conversation_to_text(conversation, self.db_manager)
-        
         # Create temporary file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as temp_file:
-            temp_file.write(text_content)
+            temp_file.write(initial_content)
             temp_file_path = temp_file.name
         
         try:
@@ -294,116 +301,142 @@ class CLIHandler(cmd.Cmd):
             
             # Read the modified content back from the temporary file
             with open(temp_file_path, 'r', encoding='utf-8') as f:
-                modified_text_content = f.read()
+                modified_content = f.read()
             
-            # Parse the modified text back to conversation data
-            updated_data = utils.parse_conversation_text(modified_text_content)
+            # Parse the modified content
+            parsed_data = parse_function(modified_content)
             
-            # Update the conversation in the database
-            changes_made = []
-            
-            # Update subject if it changed
-            if updated_data['subject'] != conversation[1]:  # subject is at index 1
-                self.db_manager.update_subject(conv_id, updated_data['subject'])
-                changes_made.append(f"Updated subject to: {utils.format_subject(updated_data['subject'])}")
-            
-            # Update parent if it changed
-            if updated_data['pid'] != conversation[5]:  # pid is at index 5
-                if updated_data['pid'] is not None:
-                    # Validate the new parent ID exists
-                    parent_conversation = self.db_manager.get_conversation(updated_data['pid'])
-                    if not parent_conversation:
-                        print(utils.format_error(f"Parent conversation with ID {updated_data['pid']} not found."))
-                        return
-                    
-                    # Check for circular reference
-                    if self._would_create_circular_reference(conv_id, updated_data['pid']):
-                        print(utils.format_error(f"Cannot set parent to {updated_data['pid']}. This would create a circular reference."))
-                        return
-                
-                self.db_manager.update_conversation_parent(conv_id, updated_data['pid'])
-                if updated_data['pid'] is None:
-                    changes_made.append(f"Updated parent to None (now root conversation)")
-                else:
-                    changes_made.append(f"Updated parent to {updated_data['pid']}")
-            
-            # Update user prompt if it changed
-            if updated_data['user_prompt'] != conversation[3]:  # user_prompt is at index 3
-                # For now, we just update the user prompt directly
-                conn = sqlite3.connect(self.db_manager.db_path)
-                cursor = conn.cursor()
-                
-                cursor.execute('''
-                    UPDATE conversations
-                    SET user_prompt = ?
-                    WHERE id = ?
-                ''', (updated_data['user_prompt'], conv_id))
-                
-                conn.commit()
-                conn.close()
-                changes_made.append(f"Updated user prompt")
-            
-            # Update LLM response if it changed
-            if updated_data['llm_response'] != conversation[4]:  # llm_response is at index 4
-                # For now, we just update the llm_response directly
-                conn = sqlite3.connect(self.db_manager.db_path)
-                cursor = conn.cursor()
-                
-                cursor.execute('''
-                    UPDATE conversations
-                    SET llm_response = ?
-                    WHERE id = ?
-                ''', (updated_data['llm_response'], conv_id))
-                
-                conn.commit()
-                conn.close()
-                changes_made.append(f"Updated LLM response")
-            
-            # Update linked conversations if they changed
-            existing_linked_ids = set(self.db_manager.get_conversation_link_ids(conv_id))
-            new_linked_ids = set(updated_data['linked_ids'])
-            
-            if existing_linked_ids != new_linked_ids:
-                # Remove all existing links
-                self.db_manager.remove_all_conversation_links(conv_id)
-                
-                # Add new links
-                for link_id in new_linked_ids:
-                    # Check if the conversation to link to exists
-                    linked_conversation = self.db_manager.get_conversation(link_id)
-                    if not linked_conversation:
-                        print(utils.format_error(f"Cannot link to conversation {link_id} - it does not exist."))
-                        continue
-                    
-                    # Prevent linking to itself
-                    if link_id == conv_id:
-                        print(utils.format_error(f"Cannot link conversation {conv_id} to itself."))
-                        continue
-                    
-                    try:
-                        self.db_manager.add_conversation_link(conv_id, link_id)
-                    except ValueError as e:
-                        print(utils.format_error(f"Error linking to conversation {link_id}: {e}"))
-                
-                changes_made.append(f"Updated linked conversations to: {list(new_linked_ids)}")
-            
-            # Print results
-            if changes_made:
-                for change in changes_made:
-                    print(f"Updated conversation {conv_id} - {change}")
-            else:
-                print(f"No changes were made to conversation {conv_id}")
+            return parsed_data
         
         except ValueError as e:
             print(utils.format_error(f"Error parsing text format: {e}"))
+            return None
         except Exception as e:
-            print(utils.format_error(f"Error updating conversation: {e}"))
+            print(utils.format_error(f"Error processing content: {e}"))
+            return None
         finally:
             # Clean up the temporary file
             try:
                 os.remove(temp_file_path)
             except OSError:
                 pass  # Ignore errors in removing temporary file
+    
+    def _edit_conversation_in_external_editor(self, conv_id: int, conversation: tuple):
+        """Open conversation in external editor for comprehensive editing.
+        
+        Args:
+            conv_id: ID of the conversation to edit
+            conversation: The conversation tuple to edit
+        """
+        import os
+        
+        # Convert conversation to plain text format
+        text_content = utils.conversation_to_text(conversation, self.db_manager)
+        
+        # Open editor with the content
+        updated_data = self._open_editor_with_content(
+            text_content, 
+            utils.parse_conversation_text
+        )
+        
+        # If parsing failed, return early
+        if updated_data is None:
+            return
+            
+        # Update the conversation in the database
+        changes_made = []
+        
+        # Update subject if it changed
+        if updated_data['subject'] != conversation[1]:  # subject is at index 1
+            self.db_manager.update_subject(conv_id, updated_data['subject'])
+            changes_made.append(f"Updated subject to: {utils.format_subject(updated_data['subject'])}")
+        
+        # Update parent if it changed
+        if updated_data['pid'] != conversation[5]:  # pid is at index 5
+            if updated_data['pid'] is not None:
+                # Validate the new parent ID exists
+                parent_conversation = self.db_manager.get_conversation(updated_data['pid'])
+                if not parent_conversation:
+                    print(utils.format_error(f"Parent conversation with ID {updated_data['pid']} not found."))
+                    return
+                
+                # Check for circular reference
+                if self._would_create_circular_reference(conv_id, updated_data['pid']):
+                    print(utils.format_error(f"Cannot set parent to {updated_data['pid']}. This would create a circular reference."))
+                    return
+            
+            self.db_manager.update_conversation_parent(conv_id, updated_data['pid'])
+            if updated_data['pid'] is None:
+                changes_made.append(f"Updated parent to None (now root conversation)")
+            else:
+                changes_made.append(f"Updated parent to {updated_data['pid']}")
+        
+        # Update user prompt if it changed
+        if updated_data['user_prompt'] != conversation[3]:  # user_prompt is at index 3
+            # For now, we just update the user prompt directly
+            conn = sqlite3.connect(self.db_manager.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                UPDATE conversations
+                SET user_prompt = ?
+                WHERE id = ?
+            ''', (updated_data['user_prompt'], conv_id))
+            
+            conn.commit()
+            conn.close()
+            changes_made.append(f"Updated user prompt")
+        
+        # Update LLM response if it changed
+        if updated_data['llm_response'] != conversation[4]:  # llm_response is at index 4
+            # For now, we just update the llm_response directly
+            conn = sqlite3.connect(self.db_manager.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                UPDATE conversations
+                SET llm_response = ?
+                WHERE id = ?
+            ''', (updated_data['llm_response'], conv_id))
+            
+            conn.commit()
+            conn.close()
+            changes_made.append(f"Updated LLM response")
+        
+        # Update linked conversations if they changed
+        existing_linked_ids = set(self.db_manager.get_conversation_link_ids(conv_id))
+        new_linked_ids = set(updated_data['linked_ids'])
+        
+        if existing_linked_ids != new_linked_ids:
+            # Remove all existing links
+            self.db_manager.remove_all_conversation_links(conv_id)
+            
+            # Add new links
+            for link_id in new_linked_ids:
+                # Check if the conversation to link to exists
+                linked_conversation = self.db_manager.get_conversation(link_id)
+                if not linked_conversation:
+                    print(utils.format_error(f"Cannot link to conversation {link_id} - it does not exist."))
+                    continue
+                
+                # Prevent linking to itself
+                if link_id == conv_id:
+                    print(utils.format_error(f"Cannot link conversation {conv_id} to itself."))
+                    continue
+                
+                try:
+                    self.db_manager.add_conversation_link(conv_id, link_id)
+                except ValueError as e:
+                    print(utils.format_error(f"Error linking to conversation {link_id}: {e}"))
+            
+            changes_made.append(f"Updated linked conversations to: {list(new_linked_ids)}")
+        
+        # Print results
+        if changes_made:
+            for change in changes_made:
+                print(f"Updated conversation {conv_id} - {change}")
+        else:
+            print(f"No changes were made to conversation {conv_id}")
     
     def _would_create_circular_reference(self, conv_id: int, new_parent_id: int) -> bool:
         """Check if setting new_parent_id as parent of conv_id would create a circular reference.
@@ -529,9 +562,16 @@ class CLIHandler(cmd.Cmd):
         sys.stdout.flush()  # Ensure the output is displayed immediately
     
     def do_ask(self, arg):
-        """Ask a question with optional parent: ask [@<id>] <prompt>"""
+        """
+        Ask a question with optional parent: ask [@<id>] <prompt> or 'ask' to open file for input
+        
+        Usage:
+            ask [@<id>] <prompt> - Ask a question with optional parent ID
+            ask - Opens an external editor to input a longer prompt and parent ID from a file
+        """
         if not arg:
-            print(utils.format_error("Please provide a prompt to ask."))
+            # When no arguments provided, open file for input similar to edit functionality
+            self._ask_via_file()
             return
         
         # Check if the prompt starts with @<id>
@@ -570,6 +610,179 @@ class CLIHandler(cmd.Cmd):
                 
         except Exception as e:
             print(utils.format_error(f"Error creating conversation: {e}"))
+    
+    def do_add(self, arg):
+        """
+        Manually add a conversation through file input: add
+        
+        Usage:
+            add - Opens an external editor to manually add a conversation with parent, links, prompt and response
+        """
+        # Always open file for input (no arguments version)
+        self._add_via_file()
+    
+    def _add_via_file(self):
+        """Open a temporary file for user to manually input conversation details."""
+        import os
+        
+        # Create template content for the file with current parent ID if available
+        template_content = self._create_add_file_template(parent_id=self.current_parent_id)
+        
+        # Open editor with the content
+        parsed_data = self._open_editor_with_content(
+            template_content, 
+            utils.parse_add_file_content
+        )
+        
+        # If parsing failed, return early
+        if parsed_data is None:
+            return
+        
+        parent_id = parsed_data.get('parent_id')
+        user_prompt = parsed_data.get('user_prompt', '')
+        llm_response = parsed_data.get('llm_response', '')
+        linked_ids = parsed_data.get('linked_ids', [])
+        
+        # Check if the conversation has meaningful content (prompt or response)
+        if not user_prompt.strip() and not llm_response.strip():
+            print(utils.format_error("No meaningful content provided. Conversation not added."))
+            return
+        
+        # Validate parent if provided
+        if parent_id is not None:
+            parent_conv = self.db_manager.get_conversation(parent_id)
+            if not parent_conv:
+                print(utils.format_error(f"Parent conversation with ID {parent_id} not found."))
+                return
+        
+        # Validate linked conversations if provided
+        for link_id in linked_ids:
+            linked_conv = self.db_manager.get_conversation(link_id)
+            if not linked_conv:
+                print(utils.format_error(f"Linked conversation with ID {link_id} not found."))
+                return
+        
+        # Generate a subject based on the prompt and response using the LLM
+        subject = self.conversation_tree.ollama_client.generate_subject(user_prompt, llm_response)
+        
+        # Add the conversation to the database
+        conv_id = self.db_manager.add_conversation(
+            subject=subject,
+            model_name=self.model_name,
+            user_prompt=user_prompt,
+            llm_response=llm_response,
+            pid=parent_id
+        )
+        
+        # Add links if any were specified
+        for link_id in linked_ids:
+            try:
+                self.db_manager.add_conversation_link(conv_id, link_id)
+            except ValueError as e:
+                print(utils.format_error(f"Error linking conversation {conv_id} to {link_id}: {e}"))
+        
+        print(f"\nAdded conversation {conv_id} — {utils.format_subject(subject)}")
+        
+        # Set this as the current parent for follow-up questions
+        self.current_parent_id = conv_id
+    
+    def _create_add_file_template(self, parent_id=None, linked_ids=None):
+        """
+        Create a template for the add command file input.
+        """
+        parent_id_str = str(parent_id) if parent_id is not None else ""
+        linked_ids_str = ','.join(map(str, linked_ids)) if linked_ids else ""
+        
+        template = f"""# Add Conversation File
+# Only edit the fields below. Do not change the field names.
+# To remove parent, change PARENT_ID to 'None' or leave empty.
+# To update linked conversations, change LINKED_CONVERSATIONS_ID to comma-separated IDs.
+# USER PROMPT section starts after 'USER_PROMPT_START' and ends before 'USER_PROMPT_END'
+# LLM RESPONSE section starts after 'LLM_RESPONSE_START' and ends before 'LLM_RESPONSE_END'
+
+PARENT_ID: {parent_id_str}
+LINKED_CONVERSATIONS_ID: {linked_ids_str}
+
+USER_PROMPT_START
+
+USER_PROMPT_END
+
+LLM_RESPONSE_START
+
+LLM_RESPONSE_END
+---
+"""
+        return template
+    
+    def _ask_via_file(self):
+        """Open a temporary file for user to input prompt and parent ID."""
+        import os
+        
+        # Create template content for the file
+        template_content = self._create_ask_file_template(self.current_parent_id)
+        
+        # Open editor with the content
+        parsed_data = self._open_editor_with_content(
+            template_content, 
+            utils.parse_ask_file_content
+        )
+        
+        # If parsing failed, return early
+        if parsed_data is None:
+            return
+        
+        # Use the parsed parent_id if provided, otherwise use current parent
+        parent_id = parsed_data.get('parent_id')
+        if parent_id is None:
+            parent_id = self.current_parent_id
+        
+        prompt = parsed_data.get('user_prompt', '')
+        
+        if not prompt.strip():
+            print(utils.format_error("No prompt provided in the file."))
+            return
+        
+        # Validate parent if provided
+        if parent_id is not None:
+            parent_conv = self.db_manager.get_conversation(parent_id)
+            if not parent_conv:
+                print(utils.format_error(f"Parent conversation with ID {parent_id} not found."))
+                return
+        
+        # Create the conversation with the LLM with streaming
+        conv_id = self.conversation_tree.create_conversation(prompt, parent_id, self._stream_response_callback)
+        
+        # Add a newline after the response is complete
+        print()  # Move to the next line after the streaming response
+        
+        # Get the created conversation to get the subject
+        conversation = self.db_manager.get_conversation(conv_id)
+        if conversation:
+            subject = conversation[1]  # Subject is at index 1
+            print(f"\nSaved conversation {conv_id} — {utils.format_subject(subject)}")
+            
+            # Set this as the current parent for follow-up questions
+            self.current_parent_id = conv_id
+        else:
+            print(utils.format_error("Error: Created conversation not found in database."))
+
+    def _create_ask_file_template(self, current_parent_id=None):
+        """
+        Create a template for the ask command file input.
+        """
+        parent_id_str = str(current_parent_id) if current_parent_id is not None else ""
+        
+        template = f"""# Prompt File
+# Only edit the PARENT_ID and USER_PROMPT fields below.
+# To remove parent, change PARENT_ID to 'None' or leave empty.
+# USER PROMPT section starts after 'USER_PROMPT_START' and ends before 'USER_PROMPT_END'
+
+PARENT_ID: {parent_id_str}
+USER_PROMPT_START
+
+USER_PROMPT_END
+"""
+        return template
     
     def do_export(self, arg):
         """Export conversation tree to markdown: export <id> <file>"""
@@ -739,6 +952,8 @@ class CLIHandler(cmd.Cmd):
             print("  close        - Close current conversation context, reset to root")
             print("  search <text> - Search for text in conversations (* wildcards, case-insensitive)")
             print("  ask [@<id>] <prompt> - Ask a question with optional parent")
+            print("  ask - Open external editor to input a longer prompt and parent ID from a file")
+            print("  add - Open external editor to manually add a conversation with parent, links, prompt and response")
             print("  export <id> <file> - Export conversation tree to markdown")
             print("  summarize <id> - Summarize a conversation")
             print("  help         - Show this help message")
