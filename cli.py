@@ -294,10 +294,52 @@ class CLIHandler(cmd.Cmd):
         
         try:
             # Determine the appropriate editor based on the operating system
-            editor = os.environ.get('EDITOR', 'notepad' if os.name == 'nt' else 'nano')
+            # Check for EDITOR environment variable first, then VISUAL, then platform defaults
+            editor = os.environ.get('EDITOR') or os.environ.get('VISUAL')
             
-            # Launch the editor to edit the temporary file
-            subprocess.run([editor, temp_file_path])
+            if not editor:
+                if os.name == 'nt':  # Windows
+                    # On Windows, allow user to configure their preferred editor through environment
+                    # If not configured, default to notepad (original behavior)
+                    # But we should provide other common Windows editors as alternatives
+                    editor = 'notepad'  # Default, but users can set EDITOR env var
+                else:
+                    editor = 'nano'  # Default for Unix-like systems
+            
+            # Special handling for Windows default editor usage
+            if os.name == 'nt' and editor.lower() in ['default', 'system', 'default_app', 'system_default']:
+                # If user specifies a special keyword, use the system default application
+                # This will use the file association for .txt files
+                import time
+                import os.path
+                
+                # Use os.startfile to open with default application
+                os.startfile(temp_file_path)
+                
+                print("File opened with default application. Please save and close the file to continue...")
+                
+                # Wait for the user to finish editing by periodically checking if the file modification time has changed
+                initial_mtime = os.path.getmtime(temp_file_path)
+                timeout = 300  # 5 minutes timeout
+                start_time = time.time()
+                
+                while time.time() - start_time < timeout:
+                    time.sleep(2)  # Check every 2 seconds
+                    try:
+                        current_mtime = os.path.getmtime(temp_file_path)
+                        # If modification time has changed, assume user has saved
+                        if current_mtime != initial_mtime:
+                            print("File has been modified. Continuing...")
+                            break
+                    except OSError:
+                        # File might be temporarily locked during save operation
+                        continue
+                else:
+                    print("Timeout reached. Continuing with current content...")
+            else:
+                # Launch the editor to edit the temporary file
+                # This will block until the editor process is closed
+                subprocess.run([editor, temp_file_path])
             
             # Read the modified content back from the temporary file
             with open(temp_file_path, 'r', encoding='utf-8') as f:
