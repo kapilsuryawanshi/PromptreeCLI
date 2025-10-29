@@ -37,7 +37,7 @@ class OllamaClient:
         # Prepare the request payload
         payload = {
             "model": self.model_name,
-            "prompt": full_prompt,
+            "prompt": full_prompt + "\n\nOnly output the final answer, no other text.",
             "stream": True  # Enable streaming
         }
         
@@ -84,7 +84,7 @@ class OllamaClient:
         Returns:
             Generated subject line
         """
-        subject_prompt = f"Generate a concise, informative subject line (max 50 characters) for this conversation:\n\nPrompt: {prompt}\n\nResponse: {response}\n\nSubject:"
+        subject_prompt = f"Generate a concise, informative topic name (max 50 characters) for this conversation. Only output the topic name, no extra content:<prompt>{prompt}</prompt><response>{response}</response>"
         
         subject = self.generate_response(subject_prompt)
         

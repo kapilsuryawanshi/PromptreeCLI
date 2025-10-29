@@ -2,16 +2,23 @@ Qwen CLI prompt for Promptree application
 
 - Goal
 	- Provide a CLI that records LLM conversations as a tree. Each node stores prompt + response + metadata. Asking under a node passes only the chain of ancestors for context to the LLM so users can branch into multiple lines of research without bloating LLM context.
-- Background
-	- When you chat with an LLM, it creates a long single thread of chat conversation. With this behavior I find following issues.
-		- After a while when you accumulated long conversation then context window is bloated and the effectiveness of the LLM response declines.
-		- Comprehending this chat history is difficult if we just look at the long chain of chat.
-		- At a chat conversation user may get several questions to follow-up, whereas once he asks one questions and follow-up, he loses the track of other follow-up questions and the corresponding parent conversation. This limits the deep researching ability using LLM.
-	- To resolve these drawbacks following overall design of the conversation interface is being proposed.
-		- User should be able to fork/branch out thread at any conversation node to go deeper into the branch, so as to create a tree like structure of the chat conversation.
-		- When user follow-up in a particular branch of the conversation tree, then LLM should consider only the conversation history which lead to this branch of the follow-up instead of the entire chat history.
-		- User should be able to delete a conversation branch.
-		- User should be able to browse the conversation tree to review the knowledge generated.
+- **Background**
+	When chatting with a Large Language Model (LLM), the conversation exists as a single, linear thread. This current design presents several challenges:
+	*   As the conversation grows, the context window becomes bloated, reducing the effectiveness of the LLM's responses.
+	*   It is difficult to comprehend a long, continuous chain of messages.
+	*   When you have multiple follow-up questions on different topics, pursuing one line of inquiry can cause you to lose track of others, limiting deep research capabilities.
+	*   While past conversations are saved in the history sidebar, they are rarely reused. The tendency to start a new chat for each new question means the LLM lacks context, which can reduce response quality.
+	
+- **Proposed Solution**
+	To resolve these issues, we propose a redesigned conversation interface with a tree-like structure. Key features include:
+	*   **Branching Conversations:** Ability to fork or branch a thread at any point to explore a chain of thought in depth.
+	*   **Context Optimization:** When following up on a branch, the LLM would only consider the history leading to that branch, optimizing context window usage.
+	*   **Conversation Management:** Capability to delete or reparent branches for better organization.
+	*   **Knowledge Review:** Ability to browse the entire conversation tree to review generated knowledge.
+	*   **Linking:** Functionality to link a conversation node to another, creating a knowledge network similar to a Zettelkasten system.
+	*   **Manual Contributions:** Option to manually add insights or information to any node in the conversation tree.
+	*   **Custom GPT creation:** A root conversation could have specific instructions so that all the conversations below can have specific purpose, attitude and behavior.
+
 - Your task is to build python CLI application to implement these conversation style using the following guidelines.
 	- The application persistent database should be implemented as SQLite database.
 		- The database file should be created in the user's home directory.
@@ -36,10 +43,10 @@ Qwen CLI prompt for Promptree application
 			- rm <id>[,<id>,...]
 				- Removes the conversations and its sub conversation trees recursively starting from the given conversation id. System will get confirmation before removing the conversations.
 			- edit <id> -subject "<new subject>" -parent <None|id>
-- edit <id> -link <id>[,<id>,...] (link to multiple conversations)
-- edit <id> -link None (remove all links)
-- edit <id> -unlink <id>[,<id>,...] (unlink from specific conversations)
-- edit <id> (opens conversation in external editor in plain text format for comprehensive editing)
+			- edit <id> -link <id>[,<id>,...] (link to multiple conversations)
+			- edit <id> -link None (remove all links)
+			- edit <id> -unlink <id>[,<id>,...] (unlink from specific conversations)
+			- edit <id> (opens conversation in external editor in plain text format for comprehensive editing)
 				- Updates the subject for the conversation with <id> with the <new subject>
 				- Updates the parent for the conversation to another conversation or set to None to make this conversation as root conversation
 				- The comprehensive editing feature opens a temporary text file with the conversation details in plain text format, allowing users to edit subject, parent ID, user prompt, LLM response, and linked conversations. The file format includes markers like USER_PROMPT_START/USER_PROMPT_END and LLM_RESPONSE_START/LLM_RESPONSE_END for editing the prompt and response content.
