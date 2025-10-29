@@ -102,9 +102,15 @@ Promptree|llama2|Parent:None> search *script*
 
 ### ask
 Ask a question, optionally under a parent conversation. The LLM response will be streamed to the console in real-time.
+- Basic usage: `ask <prompt>`
+- With parent context: `ask @<id> <prompt>`
+- With external editor: `ask` (opens external editor for longer prompts)
+  - When 'ask' is used without arguments, it opens a temporary text file with PARENT_ID and USER_PROMPT sections for users to input longer prompts and specify the parent conversation ID
+  - The file format includes markers like USER_PROMPT_START/USER_PROMPT_END for editing the prompt content
 ```
 Promptree|llama2|Parent:None> ask What is the capital of France?
 Promptree|llama2|Parent:None> ask @5 How does this relate to Paris?
+Promptree|llama2|Parent:None> ask
 ```
 
 ### export
@@ -117,6 +123,15 @@ Promptree|llama2|Parent:None> export 5 output.md
 Summarize a conversation
 ```
 Promptree|llama2|Parent:None> summarize 5
+```
+
+### add
+Manually add a conversation with parent, links, prompt and response using an external editor.
+- Opens a temporary text file that includes fields for PARENT_ID, LINKED_CONVERSATIONS_ID, USER_PROMPT, and LLM_RESPONSE
+- The file format includes markers like USER_PROMPT_START/USER_PROMPT_END and LLM_RESPONSE_START/LLM_RESPONSE_END for editing the prompt and response content
+- The LLM generates a subject line based on the prompt and response, then adds the conversation to the database with the specified parent and links
+```
+Promptree|llama2|Parent:None> add
 ```
 
 ### help
