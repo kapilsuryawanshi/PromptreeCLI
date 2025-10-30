@@ -539,16 +539,25 @@ class CLIHandler(cmd.Cmd):
         for i, conv in enumerate(conversation_chain):
             conv_id_chain, subject, _, _, _, _, user_prompt_timestamp, _ = conv
             indent = "  " * i  # Indent based on level in the chain
+            
+            # The root conversation (first in the chain) should have no connector
+            # The intermediate conversations should have appropriate connectors
             # Use Unicode characters if supported, otherwise use ASCII
-            try:
-                # Test if Unicode characters work in the current environment
-                test_char = "└"
-                test_char.encode(sys.stdout.encoding or 'utf-8')
-                # Unicode characters are supported
-                connector = "└─ " if i == len(conversation_chain) - 1 else "├─ "
-            except UnicodeEncodeError:
-                # Fall back to ASCII characters
-                connector = "`- " if i == len(conversation_chain) - 1 else "|- "
+            if i == 0:
+                # Root conversation has no connector
+                connector = ""
+            else:
+                # For intermediate and final nodes, use the appropriate connector
+                try:
+                    # Test if Unicode characters work in the current environment
+                    test_char = "└"
+                    test_char.encode(sys.stdout.encoding or 'utf-8')
+                    # Unicode characters are supported
+                    # Use └─ for the last (selected) conversation, ├─ for intermediate ancestors
+                    connector = "└─ " if i == len(conversation_chain) - 1 else "├─ "
+                except UnicodeEncodeError:
+                    # Fall back to ASCII characters
+                    connector = "`- " if i == len(conversation_chain) - 1 else "|- "
             
             print(f"{indent}{connector}{utils.format_subject(subject)} (id: {conv_id_chain}, created on: {str(user_prompt_timestamp)})")
         
