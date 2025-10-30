@@ -529,32 +529,70 @@ class CLIHandler(cmd.Cmd):
             print(utils.format_error("Invalid conversation ID. Please provide a numeric ID."))
             return
         
-        # Get the conversation details to find its parent
-        conversation = self.db_manager.get_conversation(conv_id)
-        if not conversation:
+        # Get the conversation chain from root to the selected conversation
+        conversation_chain = self.db_manager.get_conversation_chain(conv_id)
+        if not conversation_chain:
             print(utils.format_error(f"Conversation with ID {conv_id} not found."))
             return
         
-        # Get parent conversation if it exists
-        parent_id = conversation[5]  # pid is at index 5
-        if parent_id is not None:
-            parent_conversation = self.db_manager.get_conversation(parent_id)
-            if parent_conversation:
-                parent_subject = parent_conversation[1]  # subject is at index 1
-                parent_timestamp = parent_conversation[6]  # user_prompt_timestamp is at index 6
-                print(f"{utils.format_subject(parent_subject)} (id: {parent_id}, created on: {parent_timestamp}) [parent]")
+        # Display the ancestor chain from root to current conversation
+        for i, conv in enumerate(conversation_chain):
+            conv_id_chain, subject, _, _, _, _, user_prompt_timestamp, _ = conv
+            indent = "  " * i  # Indent based on level in the chain
+            # Use Unicode characters if supported, otherwise use ASCII
+            try:
+                # Test if Unicode characters work in the current environment
+                test_char = "└"
+                test_char.encode(sys.stdout.encoding or 'utf-8')
+                # Unicode characters are supported
+                connector = "└─ " if i == len(conversation_chain) - 1 else "├─ "
+            except UnicodeEncodeError:
+                # Fall back to ASCII characters
+                connector = "`- " if i == len(conversation_chain) - 1 else "|- "
+            
+            print(f"{indent}{connector}{utils.format_subject(subject)} (id: {conv_id_chain}, created on: {str(user_prompt_timestamp)})")
         
-        # Get the conversation tree
+        # Get the full conversation tree for the selected conversation to display its content and children
         tree = self.db_manager.get_conversation_tree(conv_id)
         if not tree:
-            print(utils.format_error(f"Conversation with ID {conv_id} not found."))
+            print(utils.format_error(f"Conversation tree with ID {conv_id} not found."))
             return
         
         # Set this as the current parent for follow-up questions
         self.current_parent_id = conv_id
         
-        # Print the conversation and its tree
-        self._print_conversation_tree(tree, show_full_content=True)
+        # The tree variable represents the selected conversation as root with its children
+        # Print the selected conversation's content with full details
+        selected_conv = conversation_chain[-1]  # Last conversation in the chain is the selected one
+        _, subject, model_name, user_prompt, llm_response, _, user_prompt_timestamp, llm_response_timestamp = selected_conv
+        
+        # Print full content of the selected conversation
+        if user_prompt:
+            print(f"  Prompt:")
+            print(f"  {utils.format_prompt(user_prompt)}")
+        if llm_response:
+            print(f"  Model: {model_name}")
+            print(f"  Response:")
+            print(f"  {utils.format_response(llm_response)}")
+        
+        # Get and display linked conversations for the selected conversation
+        linked_conversations = self.db_manager.get_linked_conversations(conv_id)
+        if linked_conversations:
+            print(f"  Linked conversations:")
+            for linked_conv in linked_conversations:
+                linked_id, linked_subject, _, _, _, _, linked_timestamp, _ = linked_conv
+                print(f"    • {utils.format_subject(linked_subject)} (id: {linked_id}, created on: {linked_timestamp})")
+        
+        # Now print the children (subtree) of the selected conversation
+        # We need to print the children with the tree structure but without repeating the selected conversation
+        # The tree variable contains the selected conversation as root with its children
+        # We should iterate through the children only, not print the root again
+        
+        # Print each child of the selected conversation using the tree format
+        for i, child in enumerate(tree['children']):
+            is_last = (i == len(tree['children']) - 1)
+            # Use the tree printing function to print the subtree with minimal content for children
+            self._print_conversation_tree(child, prefix="", is_last=is_last, show_full_content=False)
     
     def _print_conversation_tree(self, tree: dict, prefix: str = "", is_last: bool = True, show_full_content: bool = False):
         """Recursively print the conversation tree with ASCII tree characters.
@@ -565,8 +603,20 @@ class CLIHandler(cmd.Cmd):
             is_last: Whether this is the last child at this level
             show_full_content: Whether to show full prompt/response for all nodes or only subjects for children
         """
+        # Determine which characters to use based on system compatibility
+        try:
+            # Test if Unicode characters work in the current environment
+            test_char = "└"
+            test_char.encode(sys.stdout.encoding or 'utf-8')
+            # Unicode characters are supported
+            connector = "└─ " if is_last else "├─ "
+            extension = "    " if is_last else "│   "
+        except UnicodeEncodeError:
+            # Fall back to ASCII characters
+            connector = "`- " if is_last else "|- "
+            extension = "    " if is_last else "|   "
+        
         # Print the current conversation
-        connector = "└─ " if is_last else "├─ "
         print(f"{prefix}{connector}{utils.format_subject(tree['subject'])} (id: {tree['id']}, created on: {tree['user_prompt_timestamp']})")
         
         # Print full content if this is the main node or if we're showing everything
@@ -589,7 +639,6 @@ class CLIHandler(cmd.Cmd):
                     print(f"  {prefix}    • {utils.format_subject(linked_subject)} (id: {linked_id}, created on: {linked_timestamp})")
         
         # Prepare prefix for children - if we're showing full content, the children will only show subjects
-        extension = "    " if is_last else "│   "
         new_prefix = prefix + extension
         
         # Recursively print children with only subject lines if we're showing full content
