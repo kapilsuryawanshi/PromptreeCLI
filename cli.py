@@ -541,23 +541,24 @@ class CLIHandler(cmd.Cmd):
             indent = "  " * i  # Indent based on level in the chain
             
             # The root conversation (first in the chain) should have no connector
-            # The intermediate conversations should have appropriate connectors
+            # The intermediate conversations should use the "last" connector to show the path
             # Use Unicode characters if supported, otherwise use ASCII
             if i == 0:
                 # Root conversation has no connector
                 connector = ""
             else:
-                # For intermediate and final nodes, use the appropriate connector
+                # For all ancestors in the path (including intermediate and final), use the "last" connector
+                # This creates a continuous path visualization
                 try:
                     # Test if Unicode characters work in the current environment
                     test_char = "└"
                     test_char.encode(sys.stdout.encoding or 'utf-8')
                     # Unicode characters are supported
-                    # Use └─ for the last (selected) conversation, ├─ for intermediate ancestors
-                    connector = "└─ " if i == len(conversation_chain) - 1 else "├─ "
+                    # Use └─ for all intermediate and final ancestors in the path
+                    connector = "└─ "
                 except UnicodeEncodeError:
                     # Fall back to ASCII characters
-                    connector = "`- " if i == len(conversation_chain) - 1 else "|- "
+                    connector = "`- "
             
             print(f"{indent}{connector}{utils.format_subject(subject)} (id: {conv_id_chain}, created on: {str(user_prompt_timestamp)})")
         
