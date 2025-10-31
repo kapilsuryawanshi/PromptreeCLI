@@ -994,6 +994,30 @@ USER_PROMPT_END
         except Exception as e:
             print(utils.format_error(f"Error generating summary: {e}"))
 
+    def do_up(self, arg):
+        """Navigate up to the parent conversation: up
+        Opens the parent of the currently remembered conversation (current_parent_id)."""
+        # Check if there is a current conversation context
+        if self.current_parent_id is None:
+            print(utils.format_error("No current conversation context. Cannot navigate up."))
+            return
+        
+        # Get the current conversation to find its parent
+        current_conversation = self.db_manager.get_conversation(self.current_parent_id)
+        if not current_conversation:
+            print(utils.format_error(f"Current conversation with ID {self.current_parent_id} not found."))
+            return
+        
+        # Get the parent ID (pid is at index 5)
+        parent_id = current_conversation[5]
+        if parent_id is None:
+            print(utils.format_error("Current conversation has no parent. Already at root level."))
+            return
+        
+        # Execute the open command on the parent
+        print(f"Navigating up to parent conversation (ID: {parent_id})...")
+        self.do_open(str(parent_id))
+
     def do_close(self, arg):
         """Close the current conversation context: close
         Resets the current parent to None, so new 'ask' commands will create root conversations."""
