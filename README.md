@@ -15,6 +15,7 @@ Promptree CLI is a command-line interface application that records LLM conversat
 - Stream LLM responses to console in real-time
 - Enhanced `open` command that shows parent conversation subject line before current conversation
 - New `close` command to reset current conversation context
+- New `up` command to navigate to parent of current conversation
 
 ## Requirements
 
@@ -91,6 +92,12 @@ Promptree|llama2|Parent:None> open 5
 Close current conversation context and reset to root (clears current parent)
 ```
 Promptree|llama2|Parent:5> close
+```
+
+### up
+Navigate to the parent of the currently remembered conversation
+```
+Promptree|llama2|Parent:5> up
 ```
 
 ### search

@@ -1076,6 +1076,7 @@ USER_PROMPT_END
             print("  list         - List top-level conversations")
             print("  open <id>    - Show conversation and its subtree")
             print("  close        - Close current conversation context, reset to root")
+            print("  up           - Navigate to parent of current conversation")
             print("  search <text> - Search for text in conversations (* wildcards, case-insensitive)")
             print("  ask [@<id>] <prompt> - Ask a question with optional parent")
             print("  ask - Open external editor to input a longer prompt and parent ID from a file")
