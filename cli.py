@@ -1018,6 +1018,90 @@ USER_PROMPT_END
         print(f"Navigating up to parent conversation (ID: {parent_id})...")
         self.do_open(str(parent_id))
 
+    def do_essay(self, arg):
+        """Create an essay/article from a conversation tree: essay <id> <file>
+        Uses the LLM to synthesize a cohesive essay based on the entire conversation history."""
+        if not arg:
+            print(utils.format_error("Please provide a conversation ID and output file."))
+            return
+        
+        args = arg.split(maxsplit=1)
+        if len(args) != 2:
+            print(utils.format_error("Invalid syntax. Use: essay <id> <file>"))
+            return
+        
+        try:
+            conv_id = int(args[0])
+            output_file = args[1]
+        except ValueError:
+            print(utils.format_error("Invalid conversation ID. Please provide a numeric ID."))
+            return
+        
+        # Get the conversation tree
+        tree = self.db_manager.get_conversation_tree(conv_id)
+        if not tree:
+            print(utils.format_error(f"Conversation with ID {conv_id} not found."))
+            return
+        
+        # Extract all conversation content to create a summary/essay
+        essay_content = self._collect_conversation_content(tree)
+        
+        if not essay_content.strip():
+            print(utils.format_error("No content found in the conversation tree to create an essay."))
+            return
+        
+        # Create a prompt to ask the LLM to write a cohesive essay
+        essay_prompt = f"""
+Please write a cohesive essay based on the following conversation history:
+
+{essay_content}
+
+Write a well-structured essay that synthesizes the key points from these conversations into a coherent narrative or analysis.
+"""
+        
+        try:
+            # Generate the essay using the LLM
+            print("Generating essay using LLM...")
+            essay_response = self.conversation_tree.ollama_client.generate_response(essay_prompt)
+            
+            # Write the generated essay to the output file
+            import os
+            directory = os.path.dirname(output_file)
+            if directory and not os.path.exists(directory):
+                os.makedirs(directory)
+                
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write(essay_response)
+            
+            print(f"Generated essay from conversation tree (ID: {conv_id}) and saved to: {output_file}")
+        except Exception as e:
+            print(utils.format_error(f"Error generating essay: {e}"))
+
+    def _collect_conversation_content(self, tree: dict):
+        """Collect all conversation content from the tree for essay generation.
+        
+        Args:
+            tree: The conversation tree to extract content from
+            
+        Returns:
+            String containing all the conversation content
+        """
+        content = []
+        
+        # Add the current conversation's content
+        if tree['user_prompt']:
+            content.append(f"Question: {tree['user_prompt']}")
+        if tree['llm_response']:
+            content.append(f"Answer: {tree['llm_response']}")
+        
+        # Add content from all children recursively
+        for child in tree['children']:
+            child_content = self._collect_conversation_content(child)
+            if child_content.strip():
+                content.append(child_content)
+        
+        return "\n\n".join(content)
+    
     def do_close(self, arg):
         """Close the current conversation context: close
         Resets the current parent to None, so new 'ask' commands will create root conversations."""
@@ -1082,6 +1166,7 @@ USER_PROMPT_END
             print("  ask - Open external editor to input a longer prompt and parent ID from a file")
             print("  add - Open external editor to manually add a conversation with parent, links, prompt and response")
             print("  export <id> <file> - Export conversation tree to markdown")
+            print("  essay <id> <file>  - Create an essay/article from conversation tree")
             print("  summarize <id> - Summarize a conversation")
             print("  help         - Show this help message")
             print("\nFor help with a specific command, type: help <command>")

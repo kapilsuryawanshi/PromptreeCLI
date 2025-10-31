@@ -8,6 +8,7 @@ Promptree CLI is a command-line interface application that records LLM conversat
 - Maintain context only from ancestor conversations
 - Browse conversation trees
 - Export conversation trees to markdown
+- Create essays/articles from conversation trees
 - Edit conversation subjects and parent relationships
 - Search conversations by text content
 - Remove conversations and their subtrees
@@ -124,6 +125,12 @@ Promptree|llama2|Parent:None> ask
 Export a conversation tree to a markdown file
 ```
 Promptree|llama2|Parent:None> export 5 output.md
+```
+
+### essay
+Create an essay/article from a conversation tree and save to a file
+```
+Promptree|llama2|Parent:None> essay 5 output.txt
 ```
 
 ### summarize
