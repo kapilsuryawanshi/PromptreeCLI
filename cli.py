@@ -1052,11 +1052,25 @@ USER_PROMPT_END
         
         # Create a prompt to ask the LLM to write a cohesive essay
         essay_prompt = f"""
-Please write a cohesive essay based on the following conversation history:
-
-{essay_content}
-
-Write a well-structured essay that synthesizes the key points from these conversations into a coherent narrative or analysis.
+<role>Act as an expert writer and analyst.>/role>
+<task>Your task is to synthesize the following collection of conversations into a coherent, insightful, and well-structured article.</task>
+<conversations>{essay_content}</conversations>
+<instructions>
+1.  **Analyze:** Carefully read the conversations to identify the main topics, key arguments, different perspectives, recurring themes, and any surprising insights.
+2.  **Synthesize:** Do not simply summarize each conversation. Instead, blend the ideas together to form a unified narrative or argument.
+3.  **Structure:** Organize the article with a logical flow. Suggested structure:
+    *   **Introduction:** Start with a hook that introduces the central theme and mentions that the insights are drawn from real conversations.
+    *   **Body Paragraphs:** Each paragraph should explore a distinct sub-topic or perspective found in the conversations. Use direct quotes or paraphrased ideas from the conversations as evidence to support your points.
+    *   **Conclusion:** Summarize the key takeaways and offer a final thought or a forward-looking statement based on the collective wisdom of the conversations.
+</instructions>
+<output-format>
+- Write in a professional, engaging, and article-appropriate tone.
+- Use markdown format.
+- The final output should be an essay/article.
+- Use headings and subheadings if appropriate.
+- Create a title as appropriate.
+- The output should be ready for printing without any modifications.
+</output-format>
 """
         
         try:
