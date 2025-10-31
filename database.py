@@ -147,7 +147,7 @@ class DatabaseManager:
         """Get all root conversations (those without a parent).
         
         Returns:
-            List of root conversations ordered by timestamp (most recent first)
+            List of root conversations ordered alphabetically by subject
         """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -157,7 +157,7 @@ class DatabaseManager:
                    pid, user_prompt_timestamp, llm_response_timestamp
             FROM conversations
             WHERE pid IS NULL
-            ORDER BY user_prompt_timestamp DESC
+            ORDER BY subject ASC
         ''')
         
         results = cursor.fetchall()
