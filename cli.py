@@ -1053,23 +1053,24 @@ USER_PROMPT_END
         # Create a prompt to ask the LLM to write a cohesive essay
         essay_prompt = f"""
 <role>Act as an expert writer and analyst.>/role>
-<task>Your task is to synthesize the following collection of conversations into a coherent, insightful, and well-structured article.</task>
+<task>Your task is to understand the following collection of conversations and draft a coherent, insightful, and well-structured book with chapters.</task>
 <conversations>{essay_content}</conversations>
 <instructions>
-1.  **Analyze:** Carefully read the conversations to identify the main topics, key arguments, different perspectives, recurring themes, and any surprising insights.
-2.  **Synthesize:** Do not simply summarize each conversation. Instead, blend the ideas together to form a unified narrative or argument.
-3.  **Structure:** Organize the article with a logical flow. Suggested structure:
-    *   **Introduction:** Start with a hook that introduces the central theme and mentions that the insights are drawn from real conversations.
-    *   **Body Paragraphs:** Each paragraph should explore a distinct sub-topic or perspective found in the conversations. Use direct quotes or paraphrased ideas from the conversations as evidence to support your points.
-    *   **Conclusion:** Summarize the key takeaways and offer a final thought or a forward-looking statement based on the collective wisdom of the conversations.
+1.  Analyze: Carefully read the conversations to identify the main topics, key arguments, different perspectives, recurring themes, and any surprising insights.
+2.  Articulate: Do not simply summarize each conversation. Instead, blend the ideas together to form a unified narrative or argument.
+3.  Structure: Organize the book with a logical flow. Suggested structure:
+    *   Title: Create an engaging and relevant title for the book.
+    *   Chapters: Divide the content into chapters based on themes or topics identified in the conversations. Each chapter should have a clear heading.
+    *   Table of Contents: Include a table of contents listing chapter titles.
+    *   Content: Within each chapter, present the detailed ideas, supported by examples, code, quotes or paraphrased points from the conversations.
+    *   Conclusion: End with a conclusion that encapsulates the overall insights and implications drawn from the conversations.
+    *   Style: Write in a professional, engaging, and book-appropriate tone. Ensure clarity, coherence, and readability throughout the text.
 </instructions>
 <output-format>
-- Write in a professional, engaging, and article-appropriate tone.
+- Write in a professional, engaging, and book-appropriate tone.
 - Use markdown format.
-- The final output should be an essay/article.
-- Use headings and subheadings if appropriate.
-- Create a title as appropriate.
 - The output should be ready for printing without any modifications.
+- Include a title page, table of contents, chapters with headings, and a conclusion.
 </output-format>
 """
         
